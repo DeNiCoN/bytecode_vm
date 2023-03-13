@@ -1,12 +1,8 @@
-use std::{
-    fs::File,
-    io::{self, stdin, stdout, BufRead, BufReader, Read, Write},
-    vec,
-};
+use std::io::{self, BufRead, BufReader, Read, Write};
 
 //Stack virtual machine
 #[derive(Debug, Clone)]
-enum Instruction {
+pub enum Instruction {
     Push(u64),
     Out(u64),
     In(),
@@ -182,14 +178,14 @@ impl Instruction {
     }
 }
 
-struct Machine {
-    code: Vec<Instruction>,
-    stack: Vec<u64>,
-    pc: u64,
+pub struct Machine {
+    pub code: Vec<Instruction>,
+    pub stack: Vec<u64>,
+    pub pc: u64,
 }
 
 impl Machine {
-    fn run<W: Write, R: Read>(&mut self, input: &mut R, output: &mut W) -> io::Result<usize> {
+    pub fn run<W: Write, R: Read>(&mut self, input: &mut R, output: &mut W) -> io::Result<usize> {
         let mut input = BufReader::new(input);
         loop {
             match self.code.get(self.pc as usize) {
@@ -208,14 +204,14 @@ impl Machine {
     }
 }
 
-fn serialize_code<W: Write>(instructions: &[Instruction], writer: &mut W) -> io::Result<()> {
+pub fn serialize_code<W: Write>(instructions: &[Instruction], writer: &mut W) -> io::Result<()> {
     for instr in instructions {
         instr.serialize(writer)?;
     }
     Ok(())
 }
 
-fn deserialize_code<R: Read>(reader: &mut R) -> io::Result<Vec<Instruction>> {
+pub fn deserialize_code<R: Read>(reader: &mut R) -> io::Result<Vec<Instruction>> {
     let mut instructions = Vec::new();
     loop {
         match Instruction::deserialize(reader) {
@@ -225,18 +221,4 @@ fn deserialize_code<R: Read>(reader: &mut R) -> io::Result<Vec<Instruction>> {
         }
     }
     Ok(instructions)
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut bytecode = File::open("fibonacci.bytecode")?;
-
-    let mut vm = Machine {
-        code: deserialize_code(&mut bytecode)?,
-        stack: vec![],
-        pc: 0,
-    };
-
-    vm.run(&mut stdin(), &mut stdout())?;
-
-    Ok(())
 }

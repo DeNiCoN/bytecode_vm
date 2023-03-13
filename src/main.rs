@@ -1,24 +1,47 @@
 use std::{
-    io::{self, stdin, stdout, Read, Write},
+    io::{self, stdin, stdout, BufRead, BufReader, Read, Write},
     vec,
 };
 
 //Stack virtual machine
 #[derive(Debug, Clone)]
 enum Instruction {
+    Push(u64),
+    Out(u64),
+    In(),
     OutStr(String),
 }
 
 impl Instruction {
-    fn execute<W: Write, R: Read>(
+    fn execute<W: Write, R: BufRead>(
         &self,
         machine: &mut Machine,
         input: &mut R,
         output: &mut W,
     ) -> io::Result<usize> {
         match self {
-            Instruction::OutStr(value) => output.write(value.as_bytes()),
-        }
+            Instruction::Push(value) => {
+                machine.stack.push(*value);
+            }
+            Instruction::In() => {
+                let input_str = input.lines().next().unwrap()?;
+                let value: u64 = input_str.parse().unwrap();
+
+                machine.stack.push(value);
+            }
+            Instruction::Out(pointer) => {
+                writeln!(
+                    output,
+                    "{}",
+                    machine.stack[machine.stack.len() - 1 - *pointer as usize]
+                )?;
+            }
+            Instruction::OutStr(value) => {
+                output.write(value.as_bytes())?;
+            }
+        };
+
+        Ok(0)
     }
 }
 
@@ -30,9 +53,10 @@ struct Machine {
 
 impl Machine {
     fn run<W: Write, R: Read>(&mut self, input: &mut R, output: &mut W) -> io::Result<usize> {
+        let mut input = BufReader::new(input);
         loop {
             match self.code.get(self.pc as usize) {
-                Some(instruction) => instruction.clone().execute(self, input, output)?,
+                Some(instruction) => instruction.clone().execute(self, &mut input, output)?,
                 None => break,
             };
             self.pc += 1;
@@ -44,7 +68,7 @@ impl Machine {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut vm = Machine {
-        code: vec![Instruction::OutStr("Hello, World!".to_owned())],
+        code: vec![Instruction::In(), Instruction::Out(0)],
         stack: vec![],
         pc: 0,
     };

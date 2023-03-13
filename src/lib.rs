@@ -14,6 +14,8 @@ pub enum Instruction {
     Jmp(u64),
     Dec(u64),
     Inc(u64),
+    InByte(),
+    OutByte(u64),
 }
 
 macro_rules! deserialize_variant {
@@ -78,6 +80,13 @@ impl Instruction {
                 output.write(&[10])?;
                 output.write(&a.to_le_bytes())?;
             }
+            Self::InByte() => {
+                output.write(&[11])?;
+            }
+            Self::OutByte(a) => {
+                output.write(&[12])?;
+                output.write(&a.to_le_bytes())?;
+            }
         }
         Ok(())
     }
@@ -102,6 +111,8 @@ impl Instruction {
             8 => deserialize_variant!(Jmp, input, a),
             9 => deserialize_variant!(Dec, input, a),
             10 => deserialize_variant!(Inc, input, a),
+            11 => Ok(Self::InByte()),
+            12 => deserialize_variant!(OutByte, input, a),
             _ => Err(io::Error::new(io::ErrorKind::InvalidData, "invalid tag")),
         }
     }
@@ -151,18 +162,21 @@ impl Instruction {
                 let l_value = machine.stack[machine.stack.len() - 1 - *l as usize];
                 let r_value = machine.stack[machine.stack.len() - 1 - *r as usize];
                 if l_value > r_value {
-                    machine.pc = *pc - 1;
+                    machine.pc = *pc;
+                    return Ok(0);
                 }
             }
             Instruction::Eq(l, r, pc) => {
                 let l_value = machine.stack[machine.stack.len() - 1 - *l as usize];
                 let r_value = machine.stack[machine.stack.len() - 1 - *r as usize];
                 if l_value == r_value {
-                    machine.pc = *pc - 1;
+                    machine.pc = *pc;
+                    return Ok(0);
                 }
             }
             Instruction::Jmp(value) => {
-                machine.pc = *value - 1;
+                machine.pc = *value;
+                return Ok(0);
             }
             Instruction::Dec(pointer) => {
                 let index = machine.stack.len() - 1 - *pointer as usize;
@@ -172,7 +186,20 @@ impl Instruction {
                 let index = machine.stack.len() - 1 - *pointer as usize;
                 machine.stack[index] += 1;
             }
+            Instruction::InByte() => {
+                let mut buf = [0];
+                input.read_exact(&mut buf)?;
+                let value = u8::from_le_bytes(buf);
+                machine.stack.push(value as u64);
+            }
+            Instruction::OutByte(pointer) => {
+                output.write(
+                    &machine.stack[machine.stack.len() - 1 - *pointer as usize].to_le_bytes(),
+                )?;
+            }
         };
+
+        machine.pc += 1;
 
         Ok(0)
     }
@@ -191,11 +218,14 @@ impl Machine {
             match self.code.get(self.pc as usize) {
                 Some(instruction) => {
                     // println!("{:?}", instruction);
-                    instruction.clone().execute(self, &mut input, output)?
+                    match instruction.clone().execute(self, &mut input, output) {
+                        Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                        Err(e) => return Err(e),
+                        Ok(_) => (),
+                    }
                 }
                 None => break,
             };
-            self.pc += 1;
             // println!("{:?}", self.stack);
             // println!("{}", self.pc);
         }

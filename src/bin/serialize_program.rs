@@ -12,7 +12,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut file = File::create(filename)?;
 
-    let code: Vec<Instruction> = vec![Instruction::OutStr("Hello, World!".to_owned())];
+    let code: Vec<Instruction> = vec![
+        Instruction::InByte(),
+        Instruction::OutByte(0),
+        Instruction::Jmp(0),
+    ];
 
     serialize_code(&code, &mut file)?;
 

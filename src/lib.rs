@@ -130,7 +130,7 @@ impl Instruction {
                 )?;
             }
             Instruction::OutStr(value) => {
-                output.write(value.as_bytes())?;
+                writeln!(output, "{}", value)?;
             }
             Instruction::Add(l, r) => {
                 let l = machine.stack.len() - 1 - *l as usize;

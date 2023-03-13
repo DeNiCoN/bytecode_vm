@@ -1,4 +1,5 @@
 use std::{
+    fs::File,
     io::{self, stdin, stdout, BufRead, BufReader, Read, Write},
     vec,
 };
@@ -19,7 +20,96 @@ enum Instruction {
     Inc(u64),
 }
 
+macro_rules! deserialize_variant {
+    ($variant:ident, $input:ident, $($field:ident),*) => {{
+        let mut buf = [0; 8];
+        $(
+            $input.read_exact(&mut buf)?;
+            let $field = u64::from_le_bytes(buf);
+        )*
+            Ok(Instruction::$variant($($field),*))
+    }}
+}
+
 impl Instruction {
+    fn serialize<W: Write>(&self, output: &mut W) -> io::Result<()> {
+        match &self {
+            Self::Push(a) => {
+                output.write(&[0])?;
+                output.write(&a.to_le_bytes())?;
+            }
+            Self::Out(a) => {
+                output.write(&[1])?;
+                output.write(&a.to_le_bytes())?;
+            }
+            Self::In() => {
+                output.write(&[2])?;
+            }
+            Self::OutStr(a) => {
+                output.write(&[3])?;
+                output.write(&a.as_bytes())?;
+            }
+            Self::Copy(a) => {
+                output.write(&[4])?;
+                output.write(&a.to_le_bytes())?;
+            }
+            Self::Add(a, b) => {
+                output.write(&[5])?;
+                output.write(&a.to_le_bytes())?;
+                output.write(&b.to_le_bytes())?;
+            }
+            Self::Gt(a, b, c) => {
+                output.write(&[6])?;
+                output.write(&a.to_le_bytes())?;
+                output.write(&b.to_le_bytes())?;
+                output.write(&c.to_le_bytes())?;
+            }
+            Self::Eq(a, b, c) => {
+                output.write(&[7])?;
+                output.write(&a.to_le_bytes())?;
+                output.write(&b.to_le_bytes())?;
+                output.write(&c.to_le_bytes())?;
+            }
+            Self::Jmp(a) => {
+                output.write(&[8])?;
+                output.write(&a.to_le_bytes())?;
+            }
+            Self::Dec(a) => {
+                output.write(&[9])?;
+                output.write(&a.to_le_bytes())?;
+            }
+            Self::Inc(a) => {
+                output.write(&[10])?;
+                output.write(&a.to_le_bytes())?;
+            }
+        }
+        Ok(())
+    }
+
+    fn deserialize<R: Read>(input: &mut R) -> io::Result<Self> {
+        let mut tag = [0];
+        input.read_exact(&mut tag)?;
+        match tag[0] {
+            0 => deserialize_variant!(Push, input, a),
+            1 => deserialize_variant!(Out, input, a),
+            2 => Ok(Self::In()),
+            3 => {
+                let mut buf = Vec::new();
+                input.read_to_end(&mut buf)?;
+                let a = String::from_utf8(buf).unwrap();
+                Ok(Self::OutStr(a))
+            }
+            4 => deserialize_variant!(Copy, input, a),
+            5 => deserialize_variant!(Add, input, a, b),
+            6 => deserialize_variant!(Gt, input, a, b, c),
+            7 => deserialize_variant!(Eq, input, a, b, c),
+            8 => deserialize_variant!(Jmp, input, a),
+            9 => deserialize_variant!(Dec, input, a),
+            10 => deserialize_variant!(Inc, input, a),
+            _ => Err(io::Error::new(io::ErrorKind::InvalidData, "invalid tag")),
+        }
+    }
+
     fn execute<W: Write, R: BufRead>(
         &self,
         machine: &mut Machine,
@@ -118,20 +208,30 @@ impl Machine {
     }
 }
 
+fn serialize_code<W: Write>(instructions: &[Instruction], writer: &mut W) -> io::Result<()> {
+    for instr in instructions {
+        instr.serialize(writer)?;
+    }
+    Ok(())
+}
+
+fn deserialize_code<R: Read>(reader: &mut R) -> io::Result<Vec<Instruction>> {
+    let mut instructions = Vec::new();
+    loop {
+        match Instruction::deserialize(reader) {
+            Ok(instr) => instructions.push(instr),
+            Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(instructions)
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut bytecode = File::open("fibonacci.bytecode")?;
+
     let mut vm = Machine {
-        code: vec![
-            Instruction::Push(0), //0
-            Instruction::In(),
-            Instruction::Push(0),
-            Instruction::Push(1),
-            Instruction::Eq(2, 3, 9), //4
-            Instruction::Copy(0),     //5
-            Instruction::Add(1, 2),
-            Instruction::Dec(2),
-            Instruction::Jmp(4),
-            Instruction::Out(0), //9
-        ],
+        code: deserialize_code(&mut bytecode)?,
         stack: vec![],
         pc: 0,
     };

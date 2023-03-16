@@ -1,20 +1,38 @@
 use std::io::{self, BufRead, BufReader, Read, Write};
 
-//Stack virtual machine
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
+    // Pushes a value onto the stack
     Push(u64),
+    // Reads a value from the stack at specified position
+    // and writes it to the output in human readable form
     Out(u64),
+    // Reads and parses an integer from the input and pushes it onto the stack
     In(),
+    // Writes a string to the output
     OutStr(String),
+    // Duplicates a value in the stack at the specified position
+    // and pushes the copy onto the stack
     Copy(u64),
+    // Pops two values at specified positions from the stack,
+    // adds them, and pushes the result
     Add(u64, u64),
+    // Compares two values in the stack at specified position,
+    // jumps to a specified program counter if the first value is greater
     Gt(u64, u64, u64),
+    // Compares two values in the stack at specified positions,
+    // jumps to a specified program counter if the values are equal
     Eq(u64, u64, u64),
+    // Jumps to a specified program counter
     Jmp(u64),
+    // Decrements the value at the specified position in the stack by 1
     Dec(u64),
+    // Increments the value at the specified position in the stack by 1
     Inc(u64),
+    // Reads a byte from the input and pushes it onto the stack
     InByte(),
+    // Reads a value from the stack at the specified position,
+    // converts it to a byte, and writes it to the output
     OutByte(u64),
 }
 

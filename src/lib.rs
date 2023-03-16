@@ -29,6 +29,30 @@ macro_rules! deserialize_variant {
     }}
 }
 
+fn serialize_string<W: Write>(writer: &mut W, string: &str) -> io::Result<()> {
+    // Serialize the length of the string as a u64 value
+    let len = string.len() as u64;
+    writer.write(&len.to_le_bytes())?;
+
+    // Serialize the string as a sequence of bytes
+    writer.write(string.as_bytes())?;
+    Ok(())
+}
+
+fn deserialize_string<R: Read>(reader: &mut R) -> io::Result<String> {
+    // Deserialize the length of the string as a u64 value
+    let mut len_buf = [0; 8];
+    reader.read_exact(&mut len_buf)?;
+    let len = u64::from_le_bytes(len_buf);
+
+    // Read the exact number of bytes specified by the length
+    let mut buf = vec![0; len as usize];
+    reader.read_exact(&mut buf)?;
+
+    // Convert the bytes back into a String
+    String::from_utf8(buf).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+}
+
 impl Instruction {
     fn serialize<W: Write>(&self, output: &mut W) -> io::Result<()> {
         match &self {
@@ -45,7 +69,7 @@ impl Instruction {
             }
             Self::OutStr(a) => {
                 output.write(&[3])?;
-                output.write(&a.as_bytes())?;
+                serialize_string(output, a)?;
             }
             Self::Copy(a) => {
                 output.write(&[4])?;
@@ -98,12 +122,7 @@ impl Instruction {
             0 => deserialize_variant!(Push, input, a),
             1 => deserialize_variant!(Out, input, a),
             2 => Ok(Self::In()),
-            3 => {
-                let mut buf = Vec::new();
-                input.read_to_end(&mut buf)?;
-                let a = String::from_utf8(buf).unwrap();
-                Ok(Self::OutStr(a))
-            }
+            3 => Ok(Self::OutStr(deserialize_string(input)?)),
             4 => deserialize_variant!(Copy, input, a),
             5 => deserialize_variant!(Add, input, a, b),
             6 => deserialize_variant!(Gt, input, a, b, c),

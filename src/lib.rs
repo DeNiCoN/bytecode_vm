@@ -1,7 +1,7 @@
 use std::io::{self, BufRead, BufReader, Read, Write};
 
 //Stack virtual machine
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     Push(u64),
     Out(u64),
@@ -193,9 +193,10 @@ impl Instruction {
                 machine.stack.push(value as u64);
             }
             Instruction::OutByte(pointer) => {
-                output.write(
-                    &machine.stack[machine.stack.len() - 1 - *pointer as usize].to_le_bytes(),
-                )?;
+                let value: u8 =
+                    u8::try_from(machine.stack[machine.stack.len() - 1 - *pointer as usize])
+                        .unwrap();
+                output.write(&[value])?;
             }
         };
 
@@ -251,4 +252,331 @@ pub fn deserialize_code<R: Read>(reader: &mut R) -> io::Result<Vec<Instruction>>
         }
     }
     Ok(instructions)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    fn test_instruction_execution(
+        instruction: Instruction,
+        machine: &mut Machine,
+        expected_machine: Machine,
+        input_data: &[u8],
+        expected_output: &[u8],
+    ) {
+        let mut input = Cursor::new(input_data);
+        let mut output = Vec::new();
+        instruction
+            .execute(machine, &mut input, &mut output)
+            .unwrap();
+
+        assert_eq!(machine.stack, expected_machine.stack);
+        assert_eq!(machine.pc, expected_machine.pc);
+        assert_eq!(output, expected_output);
+    }
+
+    #[test]
+    fn test_push() {
+        let instruction = Instruction::Push(42);
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: Vec::new(),
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: vec![42],
+            pc: 1,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, &[], &[]);
+    }
+
+    #[test]
+    fn test_out() {
+        let instruction = Instruction::Out(0);
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: vec![5],
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: vec![5],
+            pc: 1,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, &[], b"5\n");
+    }
+
+    #[test]
+    fn test_in() {
+        let instruction = Instruction::In();
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: Vec::new(),
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: vec![42],
+            pc: 1,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, b"42\n", &[]);
+    }
+
+    #[test]
+    fn test_add() {
+        let instruction = Instruction::Add(0, 1);
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: vec![2, 3],
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: vec![5],
+            pc: 1,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, &[], &[]);
+    }
+
+    #[test]
+    fn test_copy() {
+        let instruction = Instruction::Copy(0);
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: vec![5],
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: vec![5, 5],
+            pc: 1,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, &[], &[]);
+    }
+
+    #[test]
+    fn test_gt_true() {
+        let instruction = Instruction::Gt(0, 1, 5);
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: vec![2, 4],
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: vec![2, 4],
+            pc: 5,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, &[], &[]);
+    }
+
+    #[test]
+    fn test_gt_false() {
+        let instruction = Instruction::Gt(0, 1, 5);
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: vec![4, 2],
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: vec![4, 2],
+            pc: 1,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, &[], &[]);
+    }
+
+    #[test]
+    fn test_eq_true() {
+        let instruction = Instruction::Eq(0, 1, 5);
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: vec![4, 4],
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: vec![4, 4],
+            pc: 5,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, &[], &[]);
+    }
+
+    #[test]
+    fn test_eq_false() {
+        let instruction = Instruction::Eq(0, 1, 5);
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: vec![2, 4],
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: vec![2, 4],
+            pc: 1,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, &[], &[]);
+    }
+
+    #[test]
+    fn test_jmp() {
+        let instruction = Instruction::Jmp(5);
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: Vec::new(),
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: Vec::new(),
+            pc: 5,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, &[], &[]);
+    }
+
+    #[test]
+    fn test_dec() {
+        let instruction = Instruction::Dec(0);
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: vec![5],
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: vec![4],
+            pc: 1,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, &[], &[]);
+    }
+
+    #[test]
+    fn test_inc() {
+        let instruction = Instruction::Inc(0);
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: vec![5],
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: vec![6],
+            pc: 1,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, &[], &[]);
+    }
+
+    #[test]
+    fn test_in_byte() {
+        let instruction = Instruction::InByte();
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: Vec::new(),
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: vec![65],
+            pc: 1,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, b"A", &[]);
+    }
+
+    #[test]
+    fn test_out_byte() {
+        let instruction = Instruction::OutByte(0);
+        let mut machine = Machine {
+            code: Vec::new(),
+            stack: vec![65],
+            pc: 0,
+        };
+        let expected_machine = Machine {
+            code: Vec::new(),
+            stack: vec![65],
+            pc: 1,
+        };
+        test_instruction_execution(instruction, &mut machine, expected_machine, &[], &[65]);
+    }
+}
+
+#[cfg(test)]
+mod test_serialization {
+    use super::*;
+
+    fn test_serialize_deserialize(instruction: Instruction) {
+        let mut serialized = Vec::new();
+        instruction.serialize(&mut serialized).unwrap();
+
+        let mut deserialized = &serialized[..];
+        let instruction_back = Instruction::deserialize(&mut deserialized).unwrap();
+
+        assert_eq!(instruction, instruction_back);
+    }
+
+    #[test]
+    fn test_serialize_push() {
+        test_serialize_deserialize(Instruction::Push(42));
+    }
+
+    #[test]
+    fn test_serialize_out() {
+        test_serialize_deserialize(Instruction::Out(1));
+    }
+
+    #[test]
+    fn test_serialization_dec() {
+        test_serialize_deserialize(Instruction::Dec(10));
+    }
+
+    #[test]
+    fn test_serialization_inc() {
+        test_serialize_deserialize(Instruction::Inc(15));
+    }
+
+    #[test]
+    fn test_serialization_in_byte() {
+        test_serialize_deserialize(Instruction::InByte());
+    }
+
+    #[test]
+    fn test_serialization_out_byte() {
+        test_serialize_deserialize(Instruction::OutByte(10));
+    }
+
+    #[test]
+    fn test_serialization_in() {
+        test_serialize_deserialize(Instruction::In());
+    }
+
+    #[test]
+    fn test_serialization_out_str() {
+        test_serialize_deserialize(Instruction::OutStr("Hello, world!".to_string()));
+    }
+
+    #[test]
+    fn test_serialization_copy() {
+        test_serialize_deserialize(Instruction::Copy(5));
+    }
+
+    #[test]
+    fn test_serialization_add() {
+        test_serialize_deserialize(Instruction::Add(5, 7));
+    }
+
+    #[test]
+    fn test_serialization_gt() {
+        test_serialize_deserialize(Instruction::Gt(3, 4, 5));
+    }
+
+    #[test]
+    fn test_serialization_eq() {
+        test_serialize_deserialize(Instruction::Eq(3, 4, 5));
+    }
+
+    #[test]
+    fn test_serialization_jmp() {
+        test_serialize_deserialize(Instruction::Jmp(6));
+    }
 }
